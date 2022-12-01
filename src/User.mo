@@ -38,8 +38,67 @@ actor {
         #github;
     };
 
+    type UserAccount = {
+        user : Principal;
+        code : Text;
+        nickname : Text;
+        following : [Principal];
+        followers : [Principal];
+    };
+
+    type UserAccountResponse = {
+        user : Principal;
+        code : Text;
+        nickname : Text;
+        following : Nat;
+        followers : Nat;
+    };
+
     private stable var userArray : [(Text, User)] = [];
     private var users : HashMap.HashMap<Text, User> = HashMap.HashMap<Text, User>(1, Text.equal, Text.hash);
+    private stable var userAccountArray : [(Text, UserAccount)] = [];
+    private var userAccounts : HashMap.HashMap<Text, UserAccount> = HashMap.HashMap<Text, UserAccount>(1, Text.equal, Text.hash);
+
+    private stable var codeIndex : Nat = 1;
+    private var codeLength : Nat = 6;
+
+    private func arrayAdd<T>(array: [T], item: T) : [T] {
+        var newArray : Buffer.Buffer<T> = Buffer.Buffer<T>(0);
+        newArray.add(item);
+        for (t : T in array.vals()) {
+            newArray.add(t);
+        };
+        return newArray.toArray();
+    };
+
+    private func createUserCode() : Text {
+        var code: Text = Nat.toText(codeIndex);
+        codeIndex += 1;
+        while (code.size() < codeLength) {
+            code := "0" # code;
+        };
+        code
+    };
+
+    private func getUserAccount(caller: Principal) : UserAccount {
+        let userAddress: Text = PrincipalUtils.toAddress(caller);
+        switch(userAccounts.get(userAddress)) {
+            case (?userAccount) {
+                userAccount
+            };
+            case _ {
+                let newUserAccount: UserAccount = {
+                    user = caller;
+                    code = createUserCode();
+                    nickname = userAddress;
+                    following = [];
+                    followers = [];
+                };
+                userAccounts.put(userAddress, newUserAccount);
+                newUserAccount
+            };
+        }
+    };
 
     public shared(msg) func verify(verifyType: VerifyType, account: Text) : async Result.Result<Bool, Text> {
         let userAddress: Text = PrincipalUtils.toAddress(msg.caller);
@@ -118,6 +177,74 @@ actor {
         return #ok(true);
     };
 
+    public shared(msg) func updateNickname(nickname: Text) : async Result.Result<Bool, Text> {
+        let userAddress: Text = PrincipalUtils.toAddress(msg.caller);
+        let userAccount: UserAccount = getUserAccount(msg.caller);
+        let newUserAccount: UserAccount = {
+            user = userAccount.user;
+            code = userAccount.code;
+            nickname = nickname;
+            following = userAccount.following;
+            followers = userAccount.followers;
+        };
+        userAccounts.put(userAddress, newUserAccount);
+        return #ok(true);
+    };
+
+    public shared(msg) func addFollowing(followUser: Principal) : async Result.Result<Bool, Text> {
+        let userAddress: Text = PrincipalUtils.toAddress(msg.caller);
+        let userAccount: UserAccount = getUserAccount(msg.caller);
+        let newUserAccount: UserAccount = {
+            user = userAccount.user;
+            code = userAccount.code;
+            nickname = userAccount.nickname;
+            following = arrayAdd<Principal>(userAccount.following, followUser);
+            followers = userAccount.followers;
+        };
+        userAccounts.put(userAddress, newUserAccount);
+
+        let followUserAddress: Text = PrincipalUtils.toAddress(followUser);
+        let followUserAccount: UserAccount = getUserAccount(followUser);
+        let newFollowUserAccount: UserAccount = {
+            user = followUserAccount.user;
+            code = followUserAccount.code;
+            nickname = followUserAccount.nickname;
+            following = followUserAccount.following;
+            followers = arrayAdd<Principal>(followUserAccount.followers, msg.caller);
+        };
+        userAccounts.put(followUserAddress, newFollowUserAccount);
+        return #ok(true);
+    };
+
+    public shared(msg) func deleteFollowing(followUser: Principal) : async Result.Result<Bool, Text> {
+        let userAddress: Text = PrincipalUtils.toAddress(msg.caller);
+        let userAccount: UserAccount = getUserAccount(msg.caller);
+        let newUserAccount: UserAccount = {
+            user = userAccount.user;
+            code = userAccount.code;
+            nickname = userAccount.nickname;
+            following = CollectUtils.arrayRemove<Principal>(userAccount.following, followUser, func(a, b) : Bool {
+                a == b
+            });
+            followers = userAccount.followers;
+        };
+        userAccounts.put(userAddress, newUserAccount);
+
+        let followUserAddress: Text = PrincipalUtils.toAddress(followUser);
+        let followUserAccount: UserAccount = getUserAccount(followUser);
+        let newFollowUserAccount: UserAccount = {
+            user = followUserAccount.user;
+            code = followUserAccount.code;
+            nickname = followUserAccount.nickname;
+            following = followUserAccount.following;
+            followers = CollectUtils.arrayRemove<Principal>(followUserAccount.followers, msg.caller, func(a, b) : Bool {
+                a == b
+            });
+        };
+        userAccounts.put(followUserAddress, newFollowUserAccount);
+        return #ok(true);
+    };
+
     public query(msg) func get() : async Result.Result<User, Text> {
         let userAddress: Text = PrincipalUtils.toAddress(msg.caller);
         let user: User = switch(users.get(userAddress)) {
@@ -140,6 +267,17 @@ actor {
             };
         };
         return #ok(user);
+    };
+
+    public query(msg) func getAccount() : async Result.Result<UserAccountResponse, Text> {
+        let userAccount: UserAccount = getUserAccount(msg.caller);
+        return #ok({
+            user = userAccount.user;
+            code = userAccount.code;
+            nickname = userAccount.nickname;
+            following = userAccount.following.size();
+            followers = userAccount.followers.size();
+        });
     };
 
     // public shared(msg) func updateTwitter() : async () {
@@ -278,9 +416,11 @@ actor {
     */
     system func preupgrade() {
         userArray := Iter.toArray(users.entries());
+        userAccountArray := Iter.toArray(userAccounts.entries());
     };
 
     system func postupgrade() {
         users := HashMap.fromIter<Text, User>(userArray.vals(), 1, Text.equal, Text.hash);
+        userAccounts := HashMap.fromIter<Text, UserAccount>(userAccountArray.vals(), 1, Text.equal, Text.hash);
     };
 }
