@@ -269,7 +269,7 @@ actor {
         return #ok(user);
     };
 
-    public query(msg) func getAccount() : async Result.Result<UserAccountResponse, Text> {
+    public shared(msg) func getAccount() : async Result.Result<UserAccountResponse, Text> {
         let userAccount: UserAccount = getUserAccount(msg.caller);
         return #ok({
             user = userAccount.user;
@@ -278,6 +278,53 @@ actor {
             following = userAccount.following.size();
             followers = userAccount.followers.size();
         });
+    };
+
+    public query(msg) func findUser(user: Principal) : async Result.Result<?User, Text> {
+        let userAddress: Text = PrincipalUtils.toAddress(user);
+        return #ok(users.get(userAddress));
+    };
+
+    public query(msg) func findAccount(user: Principal) : async Result.Result<?UserAccountResponse, Text> {
+        let userAddress: Text = PrincipalUtils.toAddress(user);
+        switch(userAccounts.get(userAddress)) {
+            case (?userAccount) {
+                #ok(?{
+                    user = userAccount.user;
+                    code = userAccount.code;
+                    nickname = userAccount.nickname;
+                    following = userAccount.following.size();
+                    followers = userAccount.followers.size();
+                });
+            };
+            case _ {
+                #ok(null);
+            };
+        }
+    };
+
+    public query(msg) func findFollowing(user: Principal) : async Result.Result<[Principal], Text> {
+        let userAddress: Text = PrincipalUtils.toAddress(user);
+        switch(userAccounts.get(userAddress)) {
+            case (?userAccount) {
+                #ok(userAccount.following);
+            };
+            case _ {
+                #ok([]);
+            };
+        }
+    };
+
+    public query(msg) func findFollower(user: Principal) : async Result.Result<[Principal], Text> {
+        let userAddress: Text = PrincipalUtils.toAddress(user);
+        switch(userAccounts.get(userAddress)) {
+            case (?userAccount) {
+                #ok(userAccount.followers);
+            };
+            case _ {
+                #ok([]);
+            };
+        }
     };
 
     // public shared(msg) func updateTwitter() : async () {
