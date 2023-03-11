@@ -245,8 +245,8 @@ actor {
         return #ok(true);
     };
 
-    public query(msg) func get() : async Result.Result<User, Text> {
-        let userAddress: Text = PrincipalUtils.toAddress(msg.caller);
+    public query(msg) func get(caller: Principal) : async Result.Result<User, Text> {
+        let userAddress: Text = PrincipalUtils.toAddress(caller);
         let user: User = switch(users.get(userAddress)) {
             case (?user) {
                 user
